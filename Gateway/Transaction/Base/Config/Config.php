@@ -22,7 +22,7 @@ class Config extends AbstractConfig implements ConfigInterface
     {
         return $this->getConfig(static::PATH_ENABLED);
     }
-    
+
     /**
      * @return string
      */
@@ -153,5 +153,13 @@ class Config extends AbstractConfig implements ConfigInterface
         ];
 
         return $customerConfigs;
+    }
+
+    /**
+     * @return string
+     */
+    public function getAccountId()
+    {
+        return $this->getConfig(static::PATH_ACCOUNT_ID);
     }
 }

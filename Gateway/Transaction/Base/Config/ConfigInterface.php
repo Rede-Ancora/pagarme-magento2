@@ -30,6 +30,7 @@ interface ConfigInterface
     const PATH_CUSTOMER_DISTRICT      = 'payment/pagarme_customer_address/district_attribute';
     const PATH_CUSTOMER_VAT_NUMBER    = 'customer/create_account/vat_frontend_visibility';
     const PATH_CUSTOMER_ADDRESS_LINES = 'customer/address/street_lines';
+    const PATH_ACCOUNT_ID             = 'pagarme_pagarme/hub/account_id';
     const HUB_SANDBOX_ENVIRONMENT     = 'Sandbox';
 
     /**
@@ -96,4 +97,9 @@ interface ConfigInterface
      * @return bool
      */
     public function isSendEmail();
+
+    /**
+     * @return string
+     */
+    public function getAccountId();
 }

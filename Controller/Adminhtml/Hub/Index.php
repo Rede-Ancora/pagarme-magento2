@@ -11,6 +11,7 @@ use Magento\Framework\Webapi\Exception as MagentoException;
 use Magento\Store\Model\StoreManagerInterface;
 use Pagarme\Core\Hub\Services\HubIntegrationService;
 use Pagarme\Pagarme\Concrete\Magento2CoreSetup;
+use Pagarme\Pagarme\Gateway\Transaction\Base\Config\ConfigInterface;
 
 class Index extends \Magento\Backend\App\Action
 {
@@ -202,7 +203,7 @@ class Index extends \Magento\Backend\App\Action
         );
 
         $this->configWriter->save(
-            "pagarme_pagarme/hub/account_id",
+            ConfigInterface::PATH_ACCOUNT_ID,
             $currentConfiguration->getAccountId()->getValue(),
             'websites',
             $websiteId
