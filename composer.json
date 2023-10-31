@@ -1,5 +1,5 @@
 {
-    "name": "pagarme/pagarme-magento2-module",
+    "name": "rede-ancora/pagarme-magento2",
     "license": "MIT",
     "version": "2.2.5",
     "type": "magento2-module",
