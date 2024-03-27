@@ -12,6 +12,7 @@
 
 namespace Pagarme\Pagarme\Gateway\Transaction\Base\Command;
 
+use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Payment\Gateway\Helper\SubjectReader;
 use Magento\Sales\Model\Order;
 use Magento\Sales\Api\Data\OrderInterface;
@@ -22,18 +23,35 @@ use Pagarme\Core\Kernel\Abstractions\AbstractPlatformOrderDecorator;
 use Pagarme\Core\Kernel\Interfaces\PlatformOrderInterface;
 use Pagarme\Core\Kernel\Services\OrderLogService;
 use Pagarme\Core\Kernel\Services\OrderService;
-use Pagarme\Core\Recurrence\Services\RecurrenceService;
 use Pagarme\Core\Recurrence\Services\SubscriptionService;
 use Pagarme\Pagarme\Concrete\Magento2CoreSetup;
-use Pagarme\Pagarme\Concrete\Magento2PlatformPaymentMethodDecorator;
-use Pagarme\Pagarme\Model\Ui\CreditCard\ConfigProvider;
+use Pagarme\Pagarme\Model\Ui\CreditCard\ConfigProvider as CreditConfigProvider;
 use Pagarme\Pagarme\Model\Ui\TwoCreditCard\ConfigProvider as TwoCreditCardConfigProvider;
 use Magento\Framework\Phrase;
 use Magento\Framework\Webapi\Exception as M2WebApiException;
-use Pagarme\Pagarme\Helper\RecurrenceProductHelper;
+use Pagarme\Pagarme\Service\Transaction\ThreeDSService;
 
 class InitializeCommand implements CommandInterface
 {
+
+    /**
+     * @var ThreeDSService
+     */
+    protected $threeDSService;
+    /**
+     * @var CheckoutSession
+     */
+    protected $checkoutSession;
+
+    public function __construct(
+        ThreeDSService  $threeDSService,
+        CheckoutSession $checkoutSession
+    )
+    {
+        $this->threeDSService = $threeDSService;
+        $this->checkoutSession = $checkoutSession;
+    }
+
     /**
      * @param array $commandSubject
      * @return $this
@@ -76,12 +94,14 @@ class InitializeCommand implements CommandInterface
 
         $stateObject->setData(OrderInterface::STATE, Order::STATE_PENDING_PAYMENT);
 
-        if ($payment->getMethod() === ConfigProvider::CODE || $payment->getMethod() === TwoCreditCardConfigProvider::CODE) {
+        if ($payment->getMethod() === CreditConfigProvider::CODE
+            || $payment->getMethod() === TwoCreditCardConfigProvider::CODE
+        ) {
             $stateObject->setData(OrderInterface::STATE, $customStatus->getData('state'));
             $stateObject->setData(OrderInterface::STATUS, $customStatus->getData('status'));
         }
 
-        if ($payment->getMethod() != ConfigProvider::CODE) {
+        if ($payment->getMethod() !== CreditConfigProvider::CODE) {
             $stateObject->setData(OrderInterface::STATUS, $payment->getMethodInstance()->getConfigData('order_status'));
         }
 
@@ -93,8 +113,7 @@ class InitializeCommand implements CommandInterface
     /** @return AbstractPlatformOrderDecorator */
     private function doCoreDetour($payment)
     {
-        $order =  $payment->getOrder();
-
+        $order = $payment->getOrder();
         $log = new OrderLogService();
 
         Magento2CoreSetup::bootstrap();
@@ -139,13 +158,21 @@ class InitializeCommand implements CommandInterface
             $subscriptionService = new SubscriptionService();
             $isSubscription = $subscriptionService->isSubscription($orderDecorator);
 
+            if ($this->threeDSService->hasThreeDSAuthorization($payment)) {
+                $this->threeDSService->processDeclinedThreeDsTransaction($payment, $orderDecorator);
+            }
+
             if ($isSubscription) {
                 $subscriptionService->createSubscriptionAtPagarme($orderDecorator);
             }
 
             if (!$isSubscription) {
                 $orderService = new OrderService();
-                $orderService->createOrderAtPagarme($orderDecorator);
+                $pagarmeOrder = current($orderService->createOrderAtPagarme($orderDecorator));
+                $transaction = $pagarmeOrder->getPixOrBilletTransaction();
+                if (!is_null($transaction)) {
+                    $this->checkoutSession->setPixOrBilletTransaction($transaction);
+                }
             }
 
             $orderDecorator->save();
