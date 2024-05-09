@@ -19,8 +19,10 @@ use Pagarme\Core\Kernel\Services\MoneyService;
 use Pagarme\Core\Marketplace\Services\RecipientService;
 use Pagarme\Pagarme\Helper\Marketplace\Handlers\SplitRemainderHandler;
 use Pagarme\Pagarme\Helper\Marketplace\Handlers\ExtrasAndDiscountsHandler;
-use Webkul\Marketplace\Helper\Payment;
+// use Webkul\Marketplace\Helper\Payment;
+use RedeAncora\Marketplace\Helper\Payment;
 use Pagarme\Pagarme\Concrete\Magento2CoreSetup;
+use Psr\Log\LoggerInterface;
 
 class WebkulHelper
 {
@@ -30,6 +32,16 @@ class WebkulHelper
      * @var mixed
      */
     private $webkulPaymentHelper;
+
+    /**
+     * @var Payment
+     */
+    private $_marketplaceHelper;
+
+    /**
+     * @var array
+     */
+    private $_productIds = [];
 
     /**
      * @var MagentoObjectManager
@@ -74,13 +86,15 @@ class WebkulHelper
             return;
         }
 
-        if ($this->isWebkulMarketplaceModuleDisabled()) {
-            return;
-        }
+        // if ($this->isWebkulMarketplaceModuleDisabled()) {
+        //     return;
+        // }
 
         $this->splitRemainderHandler = new SplitRemainderHandler();
         $this->extrasAndDiscountsHandler = new ExtrasAndDiscountsHandler();
-        $this->webkulPaymentHelper = $this->objectManager->get(Payment::class);
+        // $this->webkulPaymentHelper = $this->objectManager->get(Payment::class);
+        $this->_marketplaceHelper = $this->objectManager->get(Payment::class);
+        $this->logger = $this->objectManager->get(LoggerInterface::class);
 
         $this->setEnabled(true);
 
@@ -107,7 +121,8 @@ class WebkulHelper
 
     private function getSellerAndCommissions($itemPrice, $productId)
     {
-        $sellerDetail = $this->webkulPaymentHelper->getSellerDetail($productId);
+        $sellerDetail = ['id' => $this->_productIds[$productId]['seller_id'], 'commission' => $this->_productIds[$productId]['commission']];
+        
         $sellerId = $sellerDetail['id'];
 
         if (empty($sellerId)) {
@@ -228,6 +243,36 @@ class WebkulHelper
         $splitData['sellers'] = [];
         $splitData['marketplace']['totalCommission'] = 0;
         $totalPaidProductWithoutSeller = 0;
+
+        $productIds = [];
+        foreach ($orderItems as $product) {
+            $productIds[] = $product->getProductId();
+        }
+
+        $output = $this->_marketplaceHelper->transformArr($productIds);
+
+        $sellerComissionItemsPayload = [];
+        $productItemsPayload = [];
+
+        foreach ($orderItems as $orderItem) {
+
+            $productInstance = $orderItem->getProduct();
+
+            if ($productInstance->getTypeId() == 'simple') {
+                $omnikId = $output[$productInstance->getId()]['omnik_id'];
+                $sellerComissionItemsPayload[$output[$productInstance->getId()]['omnik_id']] = $this->_marketplaceHelper->getSellerComissionItemPayload($omnikId);
+                $productItemsPayload[$output[$productInstance->getId()]['omnik_id']][] = $this->_marketplaceHelper->getProductItemPayload($orderItem);
+            }
+        }
+
+        $sellerComissionPayload = $this->_marketplaceHelper->getSellerComissionPayload($sellerComissionItemsPayload, $productItemsPayload);
+        $sellerComissionPayload = $this->_marketplaceHelper->setFreightData($sellerComissionPayload);
+        $sellerComissionPayload = $this->_marketplaceHelper->sumTotalItems($sellerComissionPayload);        
+        $commissionResponse = $this->_marketplaceHelper->getCommissions($sellerComissionPayload);
+        $setCommissions = $this->_marketplaceHelper->setSellerCommission($commissionResponse, $output);
+
+        $this->_productIds = $setCommissions;
+
         foreach ($orderItems as $item) {
             $productId = $item->getProductId();
             $itemPrice = $this->moneyService->floatToCents(
